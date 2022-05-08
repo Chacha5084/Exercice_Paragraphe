@@ -1,0 +1,170 @@
+<head>
+	<script src="jquery-3.6.0.min.js"></script>
+	
+	<script>
+	
+	var apiRootInternet = "http://tomnab.fr/paragraphes-api";
+	var apiRootLocale = "http://localhost/rest/paragraphes-api/api";
+	var apiRoot = apiRootInternet;
+	var hash = false; 
+	
+	$(document).ready(function(){
+	
+		// chargement des routes d'API 
+		$("#selApiRoot").append($("<option>").html(apiRootInternet));
+		$("#selApiRoot").append($("<option>").html(apiRootLocale));
+		
+		// clic bouton login
+		$("#blocLogin .action").click(function(){
+			console.log("click login"); 
+			$.ajax({
+				type: "POST",
+				url: apiRoot + "/authenticate",
+				headers: {},
+				data: {	"user":$("#user").val(),
+						"password":$("#password").val()
+					},
+				dataType: "json",
+				success: function(oRep){
+					console.log(oRep); 
+					hash = oRep.hash; 
+					$("#blocLogin").hide();		
+					$("#blocArticle").show("fast");	
+					initListArticles();		
+				},
+				error : function() {
+					console.log("erreur authenticate cheh");
+				}
+			}); // fin ajax 
+		}); // fin click btn Login 
+		 
+		// change apiRoot active bouton login 
+		$("#selApiRoot").change(function(){
+			// on réactive le bouton login 
+			$("#blocLogin .action").prop("disabled",false);
+			apiRoot = $(this).val();
+			//console.log($("#selApiRoot option:selected").val());
+			console.log("apiroot = " + $(this).val());
+		}); // fin change apiRoot 
+		
+		
+		// change apiRoot active bouton login 
+		$("#selArticle").change(function(){
+			console.log("clic  sur " + $(this).val());
+			
+			// id de l'article choisi : 
+			var idArticle = $("#selArticle option:selected").data("id"); 
+			console.log(idArticle);
+			
+		}); // fin change selArticle 
+		
+			
+	}); // fin ready 
+		
+	function initListArticles(idArticle) {
+		// Effacer la liste d'articles précédente
+		$("#selArticle").empty(); 
+		// Créer la première option 
+		// <option disabled selected>Choisir un article</option>
+		$("#selArticle").append(
+			$("<option>")
+				.html("Choisir un article")
+				.prop("disabled",true)
+				.prop("selected",true)
+		); 
+		
+		// Exécuter une requete vers l'API pour récupérer les articles 
+		// GET /articles
+		// Resultat : {"version":1.3,"success":true,"status":200,
+		//		"articles":[{"id":"2254","titre":"Article 6"}]} 
+		$.ajax({
+			type: "GET",
+			url: apiRoot + "/articles",
+			headers: {"hash":hash},
+			dataType: "json",
+			success: function(oRep){
+				var i;
+				var jOp; var jArticleToSelect=false; 
+				console.log(oRep);
+				
+				// Insérer les articles dans le menu déroulant 
+				for(i=0;i<oRep.articles.length;i++) {
+					jOp = $("<option>")
+							.html(oRep.articles[i].titre)
+							.data(oRep.articles[i]); 
+					$("#selArticle").append(jOp); 
+					if (idArticle == oRep.articles[i].id) 
+						jArticleToSelect = jOp; 
+				}
+				
+				// TODO: SI un idArticle a été fourni en paramètre 
+				// ET si on l'a trouvé 
+				// On le charge 
+				if (jArticleToSelect) {
+					jArticleToSelect.prop("selected",true);
+					$("#selArticle").change();
+				}
+				
+			},
+			error : function() {}	
+		}); // fin ajax GET /articles 
+		
+	} // fin initListArticles()
+	</script>
+	
+	<style>
+		.border {border : 1px solid black; padding:3px;}
+		.hidden {display:none;}
+		.clickable:hover {
+			cursor:pointer; 
+			background-color:lightgrey;
+		}
+		
+		.pending {
+			background-image: url(load.gif);
+			background-position:right;
+			background-repeat:no-repeat;
+			font-style:italic;
+		}
+		
+		.pending:hover {
+			cursor: not-allowed !important;
+			background-color: white !important;	
+		}
+			
+	</style>
+	</head>
+	
+	<body>
+	
+	<div class="border" id="blocLogin">
+		<select id="selApiRoot">
+			<option disabled selected>Choisir la route racine de l'API</option>
+		</select>
+		<input type="text" id="user" value="tom"/>
+		<input type="password" id ="password" value="web"/>
+		<input disabled type="button" class="action" value="Login"/>
+	</div>
+	
+	<div class="border" id="blocArticle">
+		<select id="selArticle">
+		</select>
+
+		<input type="button" value="Supprimer">
+		<input type="text">
+		<input type="button" value="+">
+	</div>
+	
+	</body>
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	

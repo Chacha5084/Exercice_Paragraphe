@@ -1,0 +1,424 @@
+<head>
+<script src="jquery-3.6.0.min.js"></script>
+
+<script>
+	var apiRootInternet = "http://tomnab.fr/paragraphes-api";
+	var apiRootLocale = "http://localhost/rest/paragraphes-api/api";
+	var apiRoot = apiRootInternet;
+	var hash = "9f195f291b7d56a09b2a67fec14f4b22"; 
+	var currentArticle = false;
+	
+	var jTemplateTitreArticle = $("<h2>")
+											.prop("id","titre")
+											.addClass("clickable");
+	
+	
+	$(document).ready(function(){
+
+		// chargement des routes d'API 
+		$("#selApiRoot").append($("<option>").html(apiRootInternet));
+		$("#selApiRoot").append($("<option>").html(apiRootLocale));
+		
+		// clic bouton login
+		$("#blocLogin .action").click(function(){
+			console.log("click login"); 
+			$.ajax({
+				type: "POST",
+				url: apiRoot + "/authenticate",
+				headers: {},
+				data: {"user":$("#user").val(),"password":$("#password").val()},
+				success: function(oRep){
+					console.log(oRep); 
+					hash = oRep.hash; 
+					$("#blocLogin").hide();
+					$("#blocArticle").show("fast");
+					initListArticles();
+				},
+				error : function() {
+					console.log("erreur authenticate");
+				}, 
+				dataType: "json"
+				});
+			}); 
+		 
+		// change apiRoot active bouton login 
+		$("#selApiRoot").change(function(){
+			// console.log("change selApiRoot");
+			$("#blocLogin .action").prop("disabled",false);
+			apiRoot = $(this).val();
+			//console.log($("#selApiRoot option:selected").val());
+			console.log("apiroot = " + $(this).val());
+		});
+		
+		// change article
+		$("#article select").change(function(){
+			console.log("change sel article");
+			
+			var meta = $("#article select :selected").data();
+			console.log(meta);
+			
+			// Charger les paragraphes de cet article 
+			initDataArticle(meta.id);
+		});
+		
+		// click sur titre d'un article 
+		// NB : il faut définir un gestionnaire d'evenement 
+		// qui fonctionnera meme si le titre est detruit puis recréé !!!
+		$(document).on("click", "#titre", function(){
+			// on vérifie qu'il y a bien un article 
+			if (! currentArticle) return;  
+			
+			console.log("click article " + currentArticle.id); 
+			$(this).replaceWith(
+				$('<input type="text">')
+					.addClass("ta-titre")
+					.val(currentArticle.titre)
+					.keydown(function(contexte){
+						console.log("keydown ta titre");
+						if (contexte.key == "Enter") {
+							var contenu = $(this).val(); 
+							var jTA = $(this); 
+							
+							// NB : le temps de récupérer l'information venant de l'API
+							// Il ne faut pas laisser l'utilisateur sans feedback 
+							// Il faut lui interdire d'autres modifications 
+							$(this).addClass("pending");
+							$(this).prop("disabled",true);
+							
+							// valider la modification du titre 
+							// 1) envoyer une requete ajax à l'API 
+							// 		avec le nouveau titre 
+							
+							$.ajax({
+								type: "PUT",
+								url: apiRoot + "/articles/" 
+										+ currentArticle.id + "?titre=" + $(this).val(),		
+								headers: {"hash":hash},
+								dataType: "json",
+								success: function(oRep){
+									console.log(oRep);	
+									// 2) si la requete a fonctionné
+									// 		quitter le mode edition 
+									// en utilisant le nouveau titre 
+									// $(this) ne pourrait pas être utilisé pour dénoter le ta
+									// jTA fonctionne car c'est une closure !!
+									jTA.replaceWith(
+										jTemplateTitreArticle.clone().html(contenu)
+									); 
+									currentArticle.titre = contenu; 
+								},		
+								error : function() {
+									// restaurer l'état initial du titre 
+									jTA.replaceWith(
+										jTemplateTitreArticle.clone().html(currentArticle.titre)
+									); 
+								}
+							});
+
+							
+
+							
+						}
+						
+				})
+				
+			);
+		});
+		
+		
+		$(document).on("click",".addP", function() {
+			// seulement si un article courant est affiché 
+			if (! currentArticle) return;
+			
+			// haut / bas ? 
+			// NB : lors de leur insertion côté client 
+			// tant qu'on ne connait pas leur id
+			// les nouveaux paragraphes ne devront pas être éditables
+			// => classe .pending 
+			
+			console.log($(".addP").index($(this)));
+			var jP = $("<p>")
+							.html("Nouveau")
+							.addClass("pending");
+							
+			if ($(this).prev().val() != "") 
+				jP.html($(this).prev().val());
+			
+			if ($(".addP").index($(this)) == 0) {
+				// en haut 
+				$("#paragraphes").prepend(jP); 
+			} else {
+				// en bas 
+				$("#paragraphes").append(jP);
+			}
+			
+			// Demander au serveur de créer le p dans cet article 
+			$.ajax({
+				type: "POST",
+				url: apiRoot + "/articles/" + currentArticle.id + "/paragraphes",
+				headers: {"hash":hash},
+				data: {"contenu":jP.html()},
+				dataType: "json",
+				success: function(oRep){
+					console.log(oRep);	
+					// intégrer les méta-données renvoyées par le serveur 
+					// dans le BON paragraphe côté client 
+					// une closure permet de retrouver le paragraphe en question 
+					jP
+						.removeClass("pending")
+						.data(oRep.paragraphe);
+					
+				},
+			});
+		
+		
+		}); // fin click .addP  
+		
+		
+		// survol des éléments dans #paragraphes : on affiche leur méta-données 
+		$(document).on("mouseover","#paragraphes *", function(){
+			console.log($(this).data());
+		}); 
+		
+				
+		// click des éléments dans #paragraphes  
+		$(document).on("click","#paragraphes p", function(){
+			console.log($(this).data());
+			
+			// remplacer le P. par un textarea ta-p 		
+			$(this).replaceWith(
+				$('<textarea>')
+					.addClass("ta-p")
+					.val($(this).html())
+					.data($(this).data())
+					.keydown(function(contexte){	
+						var jTA = $(this);					
+						// appui sur entree 
+						if (contexte.key == "Enter") {
+							var contenu = $(this).val();
+							// Passer le textarea en mode pending
+							$(this).addClass("pending");
+							// le désactiver 
+							$(this).prop("disabled",true);
+							
+							// Envoyer une requete de mise à jour au serveur 
+							$.ajax({
+								type: "PUT",
+								url: apiRoot + "/articles/" 
+										+ currentArticle.id 
+										+ "/paragraphes/"  
+										+ $(this).data("id")
+										+ "?contenu=" + contenu,		
+								headers: {"hash":hash},
+								dataType: "json",
+								success: function(oRep){
+									console.log(oRep);	
+									// restaurer le P. ET ses méta-données !
+									jTA.replaceWith(
+										$("<p>")
+											.html(oRep.paragraphe.contenu)
+											.data(oRep.paragraphe)
+									);	
+								}
+							});
+						
+						}
+					})
+			);
+		}); // fin click P 
+		
+	}); // fin ready 
+	
+	
+function initListArticles() {
+	console.log("initArticles");
+	currentArticle = false; 
+	
+	$.ajax({
+		type: "GET",
+		url: apiRoot + "/articles",
+		headers: {"hash":hash},
+		success: function(oRep){
+			var i; 
+			console.log(oRep);
+			// vider le menu déroulant 
+			$("#article select").empty();
+			// ajouter l'option "Choisir un article" 
+			// <option disabled selected></option>
+			
+			$("#article select").append(
+					$("<option>")
+						.prop("disabled",true)
+						.prop("selected",true)
+						.html("Choisir l'article")
+			);
+			
+			// remplir menu déroulant  
+			for(i=0;i<oRep.articles.length;i++) {
+				$("#article select").append(
+					$("<option>")
+						.html(oRep.articles[i].titre)
+						.data(oRep.articles[i])
+				);
+			}
+		},
+		dataType: "json"
+	});
+}
+
+function initDataArticle(idArticle) {
+	// recup meta-data article 
+	currentArticle = false; 
+	$("#titre").empty();
+	// détruire le bouton de suppression de l'article 
+	$("#btnSupprimerArticle").remove();
+	
+	$.ajax({
+		type: "GET",
+		url: apiRoot + "/articles/" + idArticle,
+		headers: {"hash":hash},
+		dataType: "json",
+		success: function(oRep){
+			console.log(oRep);
+			// enregistrer méta-données article 
+			currentArticle = oRep.article; 
+			
+			// TODO : afficher son titre 
+			$("#titre").html(currentArticle.titre);
+			
+			// Ajout d'un bouton de suppression à côté du select 
+			$("#article select").after(
+				$('<input type="button">')
+					.val("Supprimer")
+					.prop("id","btnSupprimerArticle")
+					.click(function() {
+						// Supprimer l'article au niveau API 
+						$.ajax({
+							type: "DELETE",
+							url: apiRoot + "/articles/" + currentArticle.id ,		
+							headers: {"hash":hash},
+							dataType: "json",
+							success: function(oRep){
+								console.log(oRep);	
+								// Restaurer l'état initial
+								currentArticle = false; 
+								$("#titre").empty();
+								$("#btnSupprimerArticle").remove();
+								$("#paragraphes").empty();
+								
+								// Il faut mettre à jour le select des articles 
+								initListArticles();
+							}
+						});
+						
+						// TODO : penser à l'UX 
+					
+					})
+					
+			);
+		}
+	});
+	
+	// récup. paragraphes et les afficher 
+	$.ajax({
+		type: "GET",
+		url: apiRoot + "/articles/" + idArticle +"/paragraphes",
+		headers: {"hash":hash},
+		dataType: "json",
+		success: function(oRep){
+			var i; 
+			console.log(oRep);
+			$("#paragraphes").empty();
+			for(i=0;i<oRep.paragraphes.length;i++) {
+				$("#paragraphes").append(
+					$("<p>")
+						.html(oRep.paragraphes[i].contenu)
+						.data(oRep.paragraphes[i])
+				);
+			}
+		}
+	});
+
+}
+
+</script>
+
+<style>
+	.border {border : 1px solid black; padding:3px;}
+	.hidden {display:none;}
+	.clickable:hover {
+		cursor:pointer; 
+		background-color:lightgrey;
+	}
+	.clickable-p p:hover {
+		cursor:pointer; 
+		background-color:lightgrey;
+	}
+	.ta-titre {
+		margin: 5px 0;
+		display:block;
+	}
+	
+	.ta-p {
+		margin: 5px 0;
+		display:block;
+		width:100%;	
+	}
+	
+	.pending {
+		background-image: url(load.gif);
+		background-position:right;
+		background-repeat:no-repeat;
+		font-style:italic;
+	}
+	
+	.pending:hover {
+		cursor: not-allowed !important;
+		background-color: white !important;	
+	}
+	
+	
+</style>
+</head>
+
+<body>
+
+<div class="border" id="blocLogin">
+	<select id="selApiRoot">
+		<option disabled selected>Choisir la route racine de l'API</option>
+	</select>
+	<input type="text" id="user" value="tom"/>
+	<input type="password" id ="password" value="web"/>
+	<input disabled type="button" class="action" value="Login"/>
+</div>
+
+<div class="border hidden" id="blocArticle">
+	<div id="article">
+		<select>
+			<option disabled selected>Choisir l'article</option>
+		</select>
+		
+		<h2 id="titre" class="clickable"></h2>
+	</div>
+	
+	<input type="text" /><input type="button" class="addP" value="+"/>
+	<div id="paragraphes" class="clickable-p"></div>
+	<input type="text" /><input type="button" class="addP" value="+"/>
+	
+	
+</div>
+
+
+</body>
+
+
+
+
+
+
+
+
+
+
+
+
